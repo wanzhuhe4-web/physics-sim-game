@@ -47,7 +47,7 @@ PHYSICS_SYSTEM_PROMPT = """
 @st.cache_resource
 def load_model():
     return genai.GenerativeModel(
-        model_name="gemini-3-flash", # 保持最新模型
+        model_name="gemini-3-flash-preview", # 保持最新模型
         system_instruction=PHYSICS_SYSTEM_PROMPT
     )
 
@@ -106,5 +106,6 @@ else:
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
 
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
+
 
 
