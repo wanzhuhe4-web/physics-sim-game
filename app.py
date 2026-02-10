@@ -7,7 +7,7 @@ import random
 # --- 1. 页面配置 ---
 st.set_page_config(
     page_title="物理博士生存模拟：从入门到入土", 
-    page_icon="⚔️", 
+    page_icon="⚗️", 
     layout="wide"
 )
 
@@ -35,13 +35,13 @@ PHYSICS_SYSTEM_PROMPT = """
 4. **结算模式 (Grading)**：
    - 指令：`[GRADE: REBUTTAL]`。
    - 行为：评价玩家的 Rebuttal Letter。如果玩家态度够卑微且逻辑自洽，则接受（发文+1）；否则拒稿（精神熵暴增）。
-   
+
 # 结局判定
 - `[GAME_OVER: FAILURE]` (延毕/卖红薯)
 - `[GAME_OVER: SUCCESS_ACADEMIC]` (Nature/教职)
 - `[GAME_OVER: SUCCESS_INDUSTRY]` (大厂/量化)
 
-# ⚠️ 游戏节奏控制 
+# ⚠️ 游戏节奏控制 (关键规则)
 1. **绝对禁止**在前 5 轮内强制触发结局，除非玩家主动输入了“退学”或“自杀”。
 2. 游戏必须是**回合制**的。每一轮只描述当前发生的一件事，然后等待玩家反应。
 3. **不要**一次性生成整个职业生涯的故事。
@@ -62,60 +62,8 @@ if "messages" not in st.session_state:
     st.session_state.mode = "NORMAL" # NORMAL, QUIZ, BOSS
     st.session_state.event_content = ""
 
-# --- 4. 侧边栏：商店与中控 ---
-with st.sidebar:
-    st.header("🎛️ 实验室控制台")
-    backend = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
-    
-    st.divider()
-    # 【核心保留】Temperature 滑块
-    temperature = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
-    
-    # 延毕倒计时
-    days_left = 1460 - st.session_state.round_count * 7
-    st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
-    
-    # 【保留】摸鱼商店逻辑
-    st.divider()
-    st.write("☕ **摸鱼补给站 (Shop):**")
-    col_shop1, col_shop2 = st.columns(2)
-    
-    # 商店动作处理函数
-    def shop_action(item):
-        st.session_state.round_count += 1
-        st.session_state.messages.append({"role": "user", "content": f"【摸鱼】我决定{item}。请恢复我的精神熵，并描述这个过程。"})
-        # 立即生成回复
-        try:
-            if backend == "Google AI Studio (Gemini)":
-                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                model = genai.GenerativeModel(model_name="gemini-3-flash-preview", system_instruction=PHYSICS_SYSTEM_PROMPT)
-                if "gemini_chat" not in st.session_state: st.session_state.gemini_chat = model.start_chat(history=[])
-                res = st.session_state.gemini_chat.send_message(f"【摸鱼】我决定{item}。", generation_config={"temperature": temperature}).text
-            else:
-                client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
-                full_msgs = [{"role": "system", "content": PHYSICS_SYSTEM_PROMPT}] + st.session_state.messages
-                res = client.chat.completions.create(model="deepseek-chat", messages=full_msgs, temperature=temperature).choices[0].message.content
-            
-            clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
-            st.session_state.messages.append({"role": "assistant", "content": clean_res})
-        except Exception as e:
-            st.error(f"摸鱼失败: {e}")
-
-    if col_shop1.button("喝冰美式", help="精神熵 -10"):
-        shop_action("喝一杯刷锅水般的冰美式")
-        st.rerun()
-
-    if col_shop2.button("去海边发呆", help="导师杀意 +20"):
-        shop_action("翘班去巴勒莫海边发呆")
-        st.rerun()
-
-    st.divider()
-    if st.button("重开 (Re-roll)", type="primary"):
-        st.session_state.clear()
-        st.rerun()
-
-# --- 5. API 逻辑 (保留 Temperature) ---
-def get_ai_response(prompt):
+# --- 4. API 逻辑 ---
+def get_ai_response(prompt, backend, temperature):
     try:
         if backend == "Google AI Studio (Gemini)":
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -129,22 +77,34 @@ def get_ai_response(prompt):
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 6. 核心动作处理 ---
-def handle_action(action_text, input_type="ACTION"):
-    # input_type: ACTION, QUIZ_ANSWER, REBUTTAL
+# --- 5. 核心动作处理 (支持隐藏指令) ---
+def handle_action(action_text, input_type="ACTION", display_text=None):
+    """
+    action_text: 发送给 AI 的实际内容（包含指令）
+    input_type: 动作类型
+    display_text: (可选) 显示在聊天界面上的精简内容。如果为 None，则显示 action_text。
+    """
     
-    # 1. 记录用户输入
+    # 1. 记录用户输入 (UI 显示层)
     prefix_map = {
         "ACTION": "【作死】",
         "QUIZ_ANSWER": "【答辩】",
         "REBUTTAL": "【卑微回复】"
     }
-    st.session_state.messages.append({"role": "user", "content": f"{prefix_map.get(input_type, '')} {action_text}"})
+    
+    if display_text:
+        # 如果有指定的显示文本，直接用
+        user_content = display_text
+    else:
+        # 否则使用默认格式
+        user_content = f"{prefix_map.get(input_type, '')} {action_text}"
+        
+    st.session_state.messages.append({"role": "user", "content": user_content})
     
     if input_type == "ACTION":
         st.session_state.round_count += 1
     
-    # 2. 构建 Prompt
+    # 2. 构建 Prompt (AI 逻辑层 - 使用 action_text)
     if input_type == "QUIZ_ANSWER":
         prompt = f"[ANSWER_QUIZ]: {action_text}。请评分。"
         st.session_state.mode = "NORMAL"
@@ -160,8 +120,13 @@ def handle_action(action_text, input_type="ACTION"):
         "QUIZ": "导师正在推眼镜...",
         "BOSS": "Reviewer 2 正在磨刀..."
     }
+    
+    # 从 Session State 获取当前的设置
+    backend = st.session_state.get("backend_selection", "Google AI Studio (Gemini)")
+    temperature = st.session_state.get("temperature_setting", 1.0)
+
     with st.spinner(loading_text.get(st.session_state.mode, "Loading...")):
-        res = get_ai_response(prompt)
+        res = get_ai_response(prompt, backend, temperature)
     
     # 4. 解析特殊事件标签
     new_mode = "NORMAL" 
@@ -186,20 +151,59 @@ def handle_action(action_text, input_type="ACTION"):
     # 随机事件触发器 (30%概率，且避开自由轮)
     elif st.session_state.mode == "NORMAL" and not st.session_state.is_over:
         is_free_round = (st.session_state.round_count % 3 == 0)
-        if not is_free_round and random.random() < 0.25:
-             # 强制触发 Quiz
+        # 稍微降低概率防止太频繁
+        if not is_free_round and random.random() < 0.2:
              new_mode = "QUIZ"
-             quiz_res = get_ai_response(f"[GENERATE_QUIZ] 领域：{st.session_state.field}。")
+             # 生成问题
+             quiz_res = get_ai_response(f"[GENERATE_QUIZ] 领域：{st.session_state.field}。", backend, temperature)
              st.session_state.event_content = quiz_res
 
-    # 5. 清理 (移除 Plot 逻辑)
+    # 5. 清理回复中的标签
     clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
-    
-    msg_obj = {"role": "assistant", "content": clean_res}
-    st.session_state.messages.append(msg_obj)
+    st.session_state.messages.append({"role": "assistant", "content": clean_res})
     
     # 更新状态
     st.session_state.mode = new_mode
+
+# --- 6. 侧边栏：商店与中控 ---
+with st.sidebar:
+    st.header("🎛️ 实验室控制台")
+    # 保存设置到 session state 以便函数调用
+    st.session_state.backend_selection = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
+    
+    st.divider()
+    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
+    
+    # 延毕倒计时
+    days_left = 1460 - st.session_state.round_count * 7
+    st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
+    
+    # 摸鱼商店
+    st.divider()
+    st.write("☕ **摸鱼补给站 (Shop):**")
+    col_shop1, col_shop2 = st.columns(2)
+    
+    # 商店逻辑：直接调用 handle_action，传入隐藏指令
+    if col_shop1.button("喝冰美式", help="精神熵 -10"):
+        handle_action(
+            action_text="【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。", 
+            input_type="ACTION",
+            display_text="【摸鱼】我喝了一杯刷锅水般的冰美式，感觉活过来了。"
+        )
+        st.rerun()
+
+    if col_shop2.button("去海边发呆", help="导师杀意 +20"):
+        handle_action(
+            action_text="【系统事件】玩家翘班去了海边发呆。请大幅降低精神熵，但提升导师杀意。", 
+            input_type="ACTION",
+            display_text="【摸鱼】我去巴勒莫的海边喂了会鸽子，手机关机了。"
+        )
+        st.rerun()
+
+    st.divider()
+    if st.button("重开 (Re-roll)", type="primary"):
+        st.session_state.clear()
+        st.rerun()
 
 # --- 7. 主界面渲染 ---
 st.title("⚗️ 物理博士生存模拟：从入门到入土")
@@ -227,12 +231,18 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="强场物理 / 凝聚态")
+        field_input = st.text_input("具体天坑：", value="请输入...")
         st.session_state.field = field_input
+    
+    st.info("提示：请确保已在 Secrets 中配置 GEMINI_API_KEY 或 DEEPSEEK_API_KEY。")
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
-        handle_action(f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。绝对不要直接给出结局。", "ACTION")
+        # 【关键修复】使用 display_text 隐藏复杂的防呆指令
+        real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。"
+        display_prompt = f"【入学】我是{role}方向的研究生，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
+        
+        handle_action(real_prompt, "ACTION", display_text=display_prompt)
         st.rerun()
 else:
     for msg in st.session_state.messages:
@@ -284,4 +294,3 @@ else:
         
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
-
