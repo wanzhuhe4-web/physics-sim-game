@@ -6,7 +6,7 @@ import random
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="物理博士生存模拟：从入门到入土", 
+    page_title="物理学生存模拟：从入门到入土", 
     page_icon="⚗️", 
     layout="wide"
 )
@@ -76,9 +76,9 @@ def get_ai_response(prompt, backend, temperature):
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 5. 核心动作处理 (修复冲突版) ---
+# --- 5. 核心动作处理 (周期性触发版) ---
 def handle_action(action_text, input_type="ACTION", display_text=None):
-    # 1. 记录用户输入 (UI 显示)
+    # 1. 记录用户输入
     prefix_map = {
         "ACTION": "【作死】",
         "QUIZ_ANSWER": "【答辩】",
@@ -90,30 +90,28 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     if input_type == "ACTION":
         st.session_state.round_count += 1
     
-    # 2. 预判逻辑：是否在本轮强制触发突发事件？
-    # 这样可以确保发送给 AI 的指令包含“不要给选项”，从而解决冲突。
+    # 2. 预判逻辑：固定每 3 轮触发一次 QUIZ
     force_quiz = False
     if input_type == "ACTION" and not st.session_state.is_over:
-        is_free_round = (st.session_state.round_count % 3 == 0)
-        # 20% 概率触发，且不在自由轮触发
-        if not is_free_round and random.random() < 0.2:
+        # 移除所有随机性，改为固定模运算
+        # 第 3, 6, 9... 轮强制触发
+        if st.session_state.round_count > 0 and st.session_state.round_count % 3 == 0:
             force_quiz = True
 
-    # 3. 构建 Prompt (AI 逻辑)
+    # 3. 构建 Prompt
     if input_type == "QUIZ_ANSWER":
         prompt = f"[ANSWER_QUIZ]: {action_text}。请评分。"
-        st.session_state.mode = "NORMAL" # 答完题回归正常
+        st.session_state.mode = "NORMAL"
     elif input_type == "REBUTTAL":
         prompt = f"[GRADE: REBUTTAL]: {action_text}。请决定是接收还是拒稿。"
         st.session_state.mode = "NORMAL"
     else:
-        # 常规动作
         if force_quiz:
-            # 【关键修复】如果预判触发突袭，强制 AI 不给选项，而是触发事件
+            # 强制触发突袭，不给选项
             field = st.session_state.get("field", "物理")
-            prompt = f"{action_text} (系统指令：描述完动作后果后，**不要**给出选项。立即触发 [EVENT: QUIZ] 并结合{field}领域出一道刁钻的简答题。)"
+            prompt = f"{action_text} (系统指令：本轮是考核周期。描述完后果后，**不要**给出选项。立即触发 [EVENT: QUIZ] 并结合{field}领域出一道刁钻的简答题。)"
         else:
-            # 正常流程，强制要求 A/B/C
+            # 正常流程，A/B/C
             prompt = f"{action_text} (请给出 A/B/C 三个选项)"
 
     # 4. AI 推演
@@ -129,7 +127,7 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     with st.spinner(loading_text.get(st.session_state.mode, "Loading...")):
         res = get_ai_response(prompt, backend, temperature)
     
-    # 5. 解析回复中的标签
+    # 5. 解析标签
     new_mode = "NORMAL" 
     
     if "[GAME_OVER:" in res:
@@ -149,11 +147,10 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
         st.session_state.event_content = re.sub(r"\[EVENT:.*\]", "", res).strip()
         st.toast("⚠️ 警告：导师发起突袭！", icon="🚨")
 
-    # 6. 清理回复并显示
+    # 6. 清理与显示
     clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
     st.session_state.messages.append({"role": "assistant", "content": clean_res})
     
-    # 更新状态
     st.session_state.mode = new_mode
 
 # --- 6. 侧边栏 ---
@@ -182,7 +179,7 @@ with st.sidebar:
         st.rerun()
 
 # --- 7. 主界面渲染 ---
-st.title("⚗️ 物理博士生存模拟：从入门到入土")
+st.title("⚗️ 物理学生存模拟：从入门到入土")
 
 # --- 结局 UI ---
 if st.session_state.is_over:
@@ -206,7 +203,6 @@ if not st.session_state.game_started:
     with col2: 
         field_input = st.text_input("具体天坑：", value="请输入...")
         st.session_state.field = field_input
-
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
@@ -232,22 +228,15 @@ else:
             handle_action(rebuttal, "REBUTTAL")
             st.rerun()
 
-    # Mode 2: Quiz
+    # Mode 2: Quiz (第 3, 6, 9... 轮固定触发)
     elif st.session_state.mode == "QUIZ":
-        st.warning("🚨 **突发事件：导师的死亡凝视**")
+        st.warning("🚨 **考核时刻：导师的死亡凝视**")
         st.markdown(f"#### {st.session_state.event_content}")
         if answer := st.chat_input("快编一个答案！"):
             handle_action(answer, "QUIZ_ANSWER")
             st.rerun()
 
-    # Mode 3: Free Action
-    elif (st.session_state.round_count % 3 == 0) and (st.session_state.round_count > 0):
-        st.info("✨ **自由意志时刻**：实验室没人！")
-        if prompt := st.chat_input("输入你的疯狂计划..."):
-            handle_action(prompt, "ACTION")
-            st.rerun()
-
-    # Mode 4: Normal
+    # Mode 3: Normal Options
     else:
         st.write("🔧 **抉择时刻：**")
         cols = st.columns(3)
@@ -256,49 +245,3 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
-    # === 核心交互区域 (根据 Mode 渲染不同 UI) ===
-    
-    # Mode 1: Boss Battle (Reviewer)
-    if st.session_state.mode == "BOSS":
-        st.error("⚔️ **BOSS 战：Reviewer 2 正在骑脸输出！**")
-        if st.session_state.event_content:
-            st.markdown(f"#### 审稿意见：\n{st.session_state.event_content}")
-        else:
-            st.markdown("#### 审稿人发来了一封全是全大写字母的邮件...")
-            
-        st.caption("提示：请用最卑微的语气，解释为什么你的图 3 不是用画图板画的。")
-        if rebuttal := st.chat_input("撰写 Rebuttal Letter (Example: 尊敬的 Reviewer 大佬...)"):
-            handle_action(rebuttal, "REBUTTAL")
-            st.rerun()
-
-    # Mode 2: Quiz (Mentor)
-    elif st.session_state.mode == "QUIZ":
-        st.warning("🚨 **突发事件：导师的死亡凝视**")
-        if st.session_state.event_content:
-            st.markdown(f"#### {st.session_state.event_content}")
-        
-        if answer := st.chat_input("快编一个答案！"):
-            handle_action(answer, "QUIZ_ANSWER")
-            st.rerun()
-
-    # Mode 3: Free Action (Every 3 Rounds)
-    elif (st.session_state.round_count % 3 == 0) and (st.session_state.round_count > 0):
-        st.info("✨ **自由意志时刻 (Free Action)**")
-        st.caption("实验室没人！你可以做任何事。")
-        if prompt := st.chat_input("输入你的疯狂计划..."):
-            handle_action(prompt, "ACTION")
-            st.rerun()
-
-    # Mode 4: Normal
-    else:
-        st.write("🔧 **抉择时刻：**")
-        cols = st.columns(3)
-        if cols[0].button("A", use_container_width=True): handle_action("A", "ACTION"); st.rerun()
-        if cols[1].button("B", use_container_width=True): handle_action("B", "ACTION"); st.rerun()
-        if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
-        
-        if prompt := st.chat_input("自定义作死操作..."):
-            handle_action(prompt, "ACTION"); st.rerun()
-
-
-
