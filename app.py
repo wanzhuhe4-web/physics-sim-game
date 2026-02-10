@@ -91,7 +91,7 @@ if not st.session_state.game_started:
     
     if st.button("签下卖身契 (Start Journey)"):
         st.session_state.game_started = True
-        init_prompt = f"我是{role}方向的研究生，领域是{field}。请开始我的学术第一关。记住：要极尽嘲讽。"
+        init_prompt = f"我是{role}方向的研究生，领域是{field}。请开始我的学术第一关。"
         handle_action(init_prompt)
         st.rerun()
 
@@ -118,3 +118,4 @@ else:
     if prompt := st.chat_input("或输入回复测验的答案/自定义动作..."):
         handle_action(prompt)
         st.rerun()
+
