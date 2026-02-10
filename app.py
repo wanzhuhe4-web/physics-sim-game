@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 2. 核心系统指令 (修复选项格式问题) ---
+# --- 2. 核心系统指令 ---
 PHYSICS_SYSTEM_PROMPT = """
 你是一款名为《物理生存模拟：熵增地狱》的文字 RPG 引擎。
 你的身份是**“学术界的墨菲定律化身”**。
@@ -40,21 +40,13 @@ PHYSICS_SYSTEM_PROMPT = """
 - `[GAME_OVER: SUCCESS_ACADEMIC]` (Nature/教职)
 - `[GAME_OVER: SUCCESS_INDUSTRY]` (大厂/量化)
 
-# ⚠️ 游戏节奏控制 (关键规则)
+# ⚠️ 游戏节奏控制
 1. **绝对禁止**在前 5 轮内强制触发结局。
-2. 游戏必须是**回合制**的。
-3. **不要**一次性生成整个职业生涯的故事。
-
-# ⚠️ 格式强制要求 (UI 适配)
-每次回复的最后，必须给出**严格且仅有**的三个选项，并使用 **A、B、C** 作为编号。
-格式示例：
-A. 选项一内容...
-B. 选项二内容...
-C. 选项三内容...
-(绝对不要使用 1/2/3/4 编号，也不要给出第 4 个选项)
+2. 每次回复的最后，必须给出**严格且仅有**的三个选项 (A/B/C)，**除非**触发了 [EVENT: QUIZ] 或 [EVENT: BOSS_BATTLE]。
+3. 如果触发了事件，请**不要**给出选项。
 
 # 任务
-描述场景 -> 更新数值 -> 给出 A/B/C 选项。
+描述场景 -> 更新数值 -> 给出选项(或触发事件)。
 """
 
 # --- 3. 初始化状态 ---
@@ -84,43 +76,47 @@ def get_ai_response(prompt, backend, temperature):
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 5. 核心动作处理 ---
+# --- 5. 核心动作处理 (修复冲突版) ---
 def handle_action(action_text, input_type="ACTION", display_text=None):
-    """
-    action_text: 发送给 AI 的实际内容（包含指令）
-    input_type: 动作类型
-    display_text: (可选) 显示在聊天界面上的精简内容。如果为 None，则显示 action_text。
-    """
-    
-    # 1. 记录用户输入 (UI 显示层)
+    # 1. 记录用户输入 (UI 显示)
     prefix_map = {
         "ACTION": "【作死】",
         "QUIZ_ANSWER": "【答辩】",
         "REBUTTAL": "【卑微回复】"
     }
-    
-    if display_text:
-        user_content = display_text
-    else:
-        user_content = f"{prefix_map.get(input_type, '')} {action_text}"
-        
+    user_content = display_text if display_text else f"{prefix_map.get(input_type, '')} {action_text}"
     st.session_state.messages.append({"role": "user", "content": user_content})
     
     if input_type == "ACTION":
         st.session_state.round_count += 1
     
-    # 2. 构建 Prompt (AI 逻辑层)
+    # 2. 预判逻辑：是否在本轮强制触发突发事件？
+    # 这样可以确保发送给 AI 的指令包含“不要给选项”，从而解决冲突。
+    force_quiz = False
+    if input_type == "ACTION" and not st.session_state.is_over:
+        is_free_round = (st.session_state.round_count % 3 == 0)
+        # 20% 概率触发，且不在自由轮触发
+        if not is_free_round and random.random() < 0.2:
+            force_quiz = True
+
+    # 3. 构建 Prompt (AI 逻辑)
     if input_type == "QUIZ_ANSWER":
         prompt = f"[ANSWER_QUIZ]: {action_text}。请评分。"
-        st.session_state.mode = "NORMAL"
+        st.session_state.mode = "NORMAL" # 答完题回归正常
     elif input_type == "REBUTTAL":
         prompt = f"[GRADE: REBUTTAL]: {action_text}。请决定是接收还是拒稿。"
         st.session_state.mode = "NORMAL"
     else:
-        # 在这里再次强调格式，防止 AI 忘掉
-        prompt = f"{action_text} (请给出 A/B/C 三个选项)"
+        # 常规动作
+        if force_quiz:
+            # 【关键修复】如果预判触发突袭，强制 AI 不给选项，而是触发事件
+            field = st.session_state.get("field", "物理")
+            prompt = f"{action_text} (系统指令：描述完动作后果后，**不要**给出选项。立即触发 [EVENT: QUIZ] 并结合{field}领域出一道刁钻的简答题。)"
+        else:
+            # 正常流程，强制要求 A/B/C
+            prompt = f"{action_text} (请给出 A/B/C 三个选项)"
 
-    # 3. AI 推演
+    # 4. AI 推演
     loading_text = {
         "NORMAL": "正在试图收敛...",
         "QUIZ": "导师正在推眼镜...",
@@ -133,7 +129,7 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     with st.spinner(loading_text.get(st.session_state.mode, "Loading...")):
         res = get_ai_response(prompt, backend, temperature)
     
-    # 4. 解析特殊事件标签
+    # 5. 解析回复中的标签
     new_mode = "NORMAL" 
     
     if "[GAME_OVER:" in res:
@@ -152,51 +148,32 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
         new_mode = "QUIZ"
         st.session_state.event_content = re.sub(r"\[EVENT:.*\]", "", res).strip()
         st.toast("⚠️ 警告：导师发起突袭！", icon="🚨")
-        
-    # 随机事件触发器 (30%概率，且避开自由轮)
-    elif st.session_state.mode == "NORMAL" and not st.session_state.is_over:
-        is_free_round = (st.session_state.round_count % 3 == 0)
-        if not is_free_round and random.random() < 0.2:
-             new_mode = "QUIZ"
-             quiz_res = get_ai_response(f"[GENERATE_QUIZ] 领域：{st.session_state.field}。", backend, temperature)
-             st.session_state.event_content = quiz_res
 
-    # 5. 清理回复中的标签
+    # 6. 清理回复并显示
     clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
     st.session_state.messages.append({"role": "assistant", "content": clean_res})
     
     # 更新状态
     st.session_state.mode = new_mode
 
-# --- 6. 侧边栏：商店与中控 ---
+# --- 6. 侧边栏 ---
 with st.sidebar:
     st.header("🎛️ 实验室控制台")
     st.session_state.backend_selection = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
-    
     st.divider()
-    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
+    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1)
     
     days_left = 1460 - st.session_state.round_count * 7
     st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
     
     st.divider()
-    st.write("☕ **摸鱼补给站 (Shop):**")
-    col_shop1, col_shop2 = st.columns(2)
-    
-    if col_shop1.button("喝冰美式", help="精神熵 -10"):
-        handle_action(
-            action_text="【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。请给出 A/B/C 选项。", 
-            input_type="ACTION",
-            display_text="【摸鱼】我喝了一杯刷锅水般的冰美式，感觉活过来了。"
-        )
+    st.write("☕ **摸鱼补给站:**")
+    col1, col2 = st.columns(2)
+    if col1.button("喝冰美式", help="精神熵 -10"):
+        handle_action("【系统事件】玩家购买了冰美式。请降低精神熵，描述咖啡难喝。请给出 A/B/C 选项。", "ACTION", "【摸鱼】我喝了一杯刷锅水般的冰美式。")
         st.rerun()
-
-    if col_shop2.button("去海边发呆", help="导师杀意 +20"):
-        handle_action(
-            action_text="【系统事件】玩家翘班去了海边发呆。请大幅降低精神熵，但提升导师杀意。请给出 A/B/C 选项。", 
-            input_type="ACTION",
-            display_text="【摸鱼】我去巴勒莫的海边喂了会鸽子，手机关机了。"
-        )
+    if col2.button("去海边发呆", help="导师杀意 +20"):
+        handle_action("【系统事件】玩家去海边发呆。大幅降低精神熵，提升导师杀意。请给出 A/B/C 选项。", "ACTION", "【摸鱼】我去海边喂了会鸽子。")
         st.rerun()
 
     st.divider()
@@ -212,15 +189,12 @@ if st.session_state.is_over:
     if st.session_state.ending_type == "ACADEMIC":
         st.balloons()
         st.success("## 🏆 结局：学术界的一代宗师")
-        st.image("https://img.icons8.com/color/96/trophy.png", width=100)
     elif st.session_state.ending_type == "INDUSTRY":
         st.balloons()
         st.info("## 💰 结局：半导体大厂的资本家")
-        st.image("https://img.icons8.com/color/96/money-bag.png", width=100)
     else:
         st.snow()
         st.error("## 🕯️ 结局：热力学寂灭 (退学)")
-        st.image("https://img.icons8.com/color/96/crying.png", width=100)
     st.markdown(f"> {st.session_state.final_report}")
     if st.button("投胎转世"): st.session_state.clear(); st.rerun()
     st.stop()
@@ -230,16 +204,14 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="请输入...)
+        field_input = st.text_input("具体天坑：", value="请输入...")
         st.session_state.field = field_input
-    
-    
+
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
         real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。必须给出 A/B/C 三个选项。"
         display_prompt = f"【入学】我是{role}方向的研究生，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
-        
         handle_action(real_prompt, "ACTION", display_text=display_prompt)
         st.rerun()
 else:
@@ -249,6 +221,41 @@ else:
 
     st.divider()
 
+    # === 核心交互区域 ===
+    
+    # Mode 1: Boss Battle
+    if st.session_state.mode == "BOSS":
+        st.error("⚔️ **BOSS 战：Reviewer 2 正在骑脸输出！**")
+        st.markdown(f"#### 审稿意见：\n{st.session_state.event_content}")
+        st.caption("提示：请用最卑微的语气撰写 Rebuttal Letter。")
+        if rebuttal := st.chat_input("撰写 Rebuttal..."):
+            handle_action(rebuttal, "REBUTTAL")
+            st.rerun()
+
+    # Mode 2: Quiz
+    elif st.session_state.mode == "QUIZ":
+        st.warning("🚨 **突发事件：导师的死亡凝视**")
+        st.markdown(f"#### {st.session_state.event_content}")
+        if answer := st.chat_input("快编一个答案！"):
+            handle_action(answer, "QUIZ_ANSWER")
+            st.rerun()
+
+    # Mode 3: Free Action
+    elif (st.session_state.round_count % 3 == 0) and (st.session_state.round_count > 0):
+        st.info("✨ **自由意志时刻**：实验室没人！")
+        if prompt := st.chat_input("输入你的疯狂计划..."):
+            handle_action(prompt, "ACTION")
+            st.rerun()
+
+    # Mode 4: Normal
+    else:
+        st.write("🔧 **抉择时刻：**")
+        cols = st.columns(3)
+        if cols[0].button("A", use_container_width=True): handle_action("A", "ACTION"); st.rerun()
+        if cols[1].button("B", use_container_width=True): handle_action("B", "ACTION"); st.rerun()
+        if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
+        if prompt := st.chat_input("自定义作死操作..."):
+            handle_action(prompt, "ACTION"); st.rerun()
     # === 核心交互区域 (根据 Mode 渲染不同 UI) ===
     
     # Mode 1: Boss Battle (Reviewer)
@@ -292,4 +299,5 @@ else:
         
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
