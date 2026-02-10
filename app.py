@@ -2,9 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 import re
-import random
-import matplotlib.pyplot as plt
-import numpy as np
 
 # --- 1. 页面配置 ---
 st.set_page_config(page_title="物理学生存模拟：发量保卫战", page_icon="🎓", layout="wide")
@@ -42,21 +39,6 @@ PHYSICS_SYSTEM_PROMPT = """
 # 任务
 描述场景 -> [PLOT_DATA] (可选) -> 更新数值 -> 给出选项。
 """
-
-# --- 3. 工具函数 ---
-def generate_fake_plot(status="SUCCESS"):
-    fig, ax = plt.subplots(figsize=(5, 3))
-    x = np.linspace(0, 10, 100)
-    if status == "SUCCESS":
-        y = np.exp(-x) + np.random.normal(0, 0.05, 100)
-        ax.set_title("Result: Converged", color="green", fontsize=10)
-        ax.plot(x, y, color="#1f77b4")
-    else:
-        y = np.exp(x/4) * np.sin(x*5) + np.random.normal(0, 1, 100)
-        ax.set_title("Result: DIVERGED", color="red", fontsize=10)
-        ax.plot(x, y, color="#d62728", linestyle="--")
-    ax.grid(True, alpha=0.3)
-    return fig
 
 # --- 4. 初始化状态 ---
 if "messages" not in st.session_state:
@@ -233,4 +215,5 @@ else:
         if prompt := st.chat_input("或输入回复测验的答案/自定义动作..."):
             handle_action(prompt)
             st.rerun()
+
 
