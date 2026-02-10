@@ -40,7 +40,7 @@ PHYSICS_SYSTEM_PROMPT = """
 @st.cache_resource
 def load_model():
     return genai.GenerativeModel(
-        model_name="gemini-1.5-flash", # 使用 Flash 保证响应速度
+        model_name="gemini-3-flash", # 使用 Flash 保证响应速度
         system_instruction=PHYSICS_SYSTEM_PROMPT
     )
 
@@ -107,4 +107,5 @@ else:
             with st.spinner("导师正在打字..."):
                 response = st.session_state.chat.send_message(prompt)
                 st.markdown(response.text)
+
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
