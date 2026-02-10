@@ -2,9 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 import re
-import random
 
-# --- 1. 页面配置 ---
+# --- 1. 页面配置 (已修改标题) ---
 st.set_page_config(
     page_title="物理学生存模拟：从入门到入土", 
     page_icon="⚗️", 
@@ -24,29 +23,23 @@ PHYSICS_SYSTEM_PROMPT = """
 | **导师杀意**| 0% | 达到 100% 触发“逐出师门”。 |
 | **学术垃圾**| 0篇 | 毕业硬通货。 |
 
-# 游戏模式状态机
-1. **剧情模式 (Normal)**：推进剧情，极尽嘲讽。
-2. **提问模式 (Quiz)**：导师突袭查岗。触发指令 `[EVENT: QUIZ]`。
-3. **BOSS 战模式 (Reviewer Battle)**：
-   - 触发条件：玩家进行“投稿”或随机触发。
-   - 指令：`[EVENT: BOSS_BATTLE]`。
-   - 行为：扮演 **Reviewer 2**。提出 2-3 条极其荒谬、自相矛盾、吹毛求疵的审稿意见。
-4. **结算模式 (Grading)**：
-   - 指令：`[GRADE: REBUTTAL]`。
-   - 行为：评价玩家的 Rebuttal Letter。如果玩家态度够卑微且逻辑自洽，则接受（发文+1）；否则拒稿（精神熵暴增）。
+# 游戏循环机制 (严格执行)
+游戏以 **4 个回合**为一个周期：
+1. **第 1-3 回合 (剧情)**：正常推进，每次回复末尾必须给出 **A/B/C** 三个选项。
+2. **第 4 回合 (考核)**：
+   - 当收到指令要求触发考核时，描述完上一轮的后果后，**不要给选项**。
+   - 直接触发指令 `[EVENT: QUIZ]`。
+   - 出一道极其刁钻的物理简答题。
+3. **考核结算**：
+   - 收到 `[ANSWER_QUIZ]` 后，进行评分（毒舌点评）。
+   - 然后**立即恢复**到剧情模式，给出新一轮的 A/B/C 选项。
 
-# 结局判定
-- `[GAME_OVER: FAILURE]` (延毕/卖红薯)
-- `[GAME_OVER: SUCCESS_ACADEMIC]` (Nature/教职)
-- `[GAME_OVER: SUCCESS_INDUSTRY]` (大厂/量化)
-
-# ⚠️ 游戏节奏控制
-1. **绝对禁止**在前 5 轮内强制触发结局。
-2. 每次回复的最后，必须给出**严格且仅有**的三个选项 (A/B/C)，**除非**触发了 [EVENT: QUIZ] 或 [EVENT: BOSS_BATTLE]。
-3. 如果触发了事件，请**不要**给出选项。
+# 特殊模式
+- **BOSS 战**：收到 `[EVENT: BOSS_BATTLE]` 时进入审稿人对战。
+- **结局**：收到 `[GAME_OVER: ...]` 时结束。
 
 # 任务
-描述场景 -> 更新数值 -> 给出选项(或触发事件)。
+描述场景 -> 更新数值 -> (根据当前轮次决定是给选项还是出题)。
 """
 
 # --- 3. 初始化状态 ---
@@ -76,7 +69,7 @@ def get_ai_response(prompt, backend, temperature):
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 5. 核心动作处理 (周期性触发版) ---
+# --- 5. 核心动作处理 ---
 def handle_action(action_text, input_type="ACTION", display_text=None):
     # 1. 记录用户输入
     prefix_map = {
@@ -87,31 +80,30 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     user_content = display_text if display_text else f"{prefix_map.get(input_type, '')} {action_text}"
     st.session_state.messages.append({"role": "user", "content": user_content})
     
+    # 只有常规动作才增加轮数
     if input_type == "ACTION":
         st.session_state.round_count += 1
     
-    # 2. 预判逻辑：固定每 3 轮触发一次 QUIZ
+    # 2. 预判逻辑：是否是第 4, 8, 12... 轮？
     force_quiz = False
     if input_type == "ACTION" and not st.session_state.is_over:
-        # 移除所有随机性，改为固定模运算
-        # 第 3, 6, 9... 轮强制触发
-        if st.session_state.round_count > 0 and st.session_state.round_count % 3 == 0:
+        if st.session_state.round_count > 0 and st.session_state.round_count % 4 == 0:
             force_quiz = True
 
     # 3. 构建 Prompt
     if input_type == "QUIZ_ANSWER":
-        prompt = f"[ANSWER_QUIZ]: {action_text}。请评分。"
+        prompt = f"[ANSWER_QUIZ]: {action_text}。请评分，然后继续主线剧情，必须给出 A/B/C 三个选项。"
         st.session_state.mode = "NORMAL"
+    
     elif input_type == "REBUTTAL":
-        prompt = f"[GRADE: REBUTTAL]: {action_text}。请决定是接收还是拒稿。"
+        prompt = f"[GRADE: REBUTTAL]: {action_text}。请决定是接收还是拒稿，然后继续剧情，给出 A/B/C 选项。"
         st.session_state.mode = "NORMAL"
+    
     else:
         if force_quiz:
-            # 强制触发突袭，不给选项
             field = st.session_state.get("field", "物理")
-            prompt = f"{action_text} (系统指令：本轮是考核周期。描述完后果后，**不要**给出选项。立即触发 [EVENT: QUIZ] 并结合{field}领域出一道刁钻的简答题。)"
+            prompt = f"{action_text} (系统指令：本轮是第 {st.session_state.round_count} 轮，是**强制考核回合**。描述完动作后果后，**绝对不要**给出 A/B/C 选项。请直接使用标签 `[EVENT: QUIZ]` 并结合{field}领域出一道刁钻的简答题。)"
         else:
-            # 正常流程，A/B/C
             prompt = f"{action_text} (请给出 A/B/C 三个选项)"
 
     # 4. AI 推演
@@ -127,29 +119,42 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     with st.spinner(loading_text.get(st.session_state.mode, "Loading...")):
         res = get_ai_response(prompt, backend, temperature)
     
-    # 5. 解析标签
+    # 5. 解析回复
     new_mode = "NORMAL" 
+    clean_res = res 
     
+    # 结局检测
     if "[GAME_OVER:" in res:
         st.session_state.is_over = True
         st.session_state.final_report = re.sub(r"\[GAME_OVER:.*\]", "", res).strip()
+        clean_res = st.session_state.final_report
         if "SUCCESS_ACADEMIC" in res: st.session_state.ending_type = "ACADEMIC"
         elif "SUCCESS_INDUSTRY" in res: st.session_state.ending_type = "INDUSTRY"
         else: st.session_state.ending_type = "FAILURE"
         
+    # Boss 战检测
     elif "[EVENT: BOSS_BATTLE]" in res:
         new_mode = "BOSS"
-        st.session_state.event_content = re.sub(r"\[EVENT:.*\]", "", res).strip()
-        st.toast("⚠️ 警告：Reviewer 2 出现了！", icon="⚔️")
+        parts = res.split("[EVENT: BOSS_BATTLE]")
+        clean_res = parts[0].strip()
+        st.session_state.event_content = parts[1].strip()
+        st.toast("⚠️ Reviewer 2 骑脸输出！", icon="⚔️")
         
+    # 提问检测 (Quiz)
     elif "[EVENT: QUIZ]" in res:
         new_mode = "QUIZ"
-        st.session_state.event_content = re.sub(r"\[EVENT:.*\]", "", res).strip()
-        st.toast("⚠️ 警告：导师发起突袭！", icon="🚨")
+        parts = res.split("[EVENT: QUIZ]")
+        clean_res = parts[0].strip()
+        if len(parts) > 1:
+            st.session_state.event_content = parts[1].strip()
+        else:
+            st.session_state.event_content = "（系统错误：导师忘记出题了，但他依然看着你）"
+        st.toast("⚠️ 考核回合：导师突袭！", icon="🚨")
 
-    # 6. 清理与显示
-    clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
-    st.session_state.messages.append({"role": "assistant", "content": clean_res})
+    # 6. 存入历史并更新状态
+    clean_res = clean_res.replace("[PLOT_DATA]", "").strip()
+    if clean_res:
+        st.session_state.messages.append({"role": "assistant", "content": clean_res})
     
     st.session_state.mode = new_mode
 
@@ -158,8 +163,24 @@ with st.sidebar:
     st.header("🎛️ 实验室控制台")
     st.session_state.backend_selection = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
     st.divider()
-    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
     
+    st.session_state.temperature_setting = st.slider(
+        "宇宙混沌常数 (Temperature)", 
+        0.0, 1.5, 1.0, 0.1,
+        help="🌡️ **熵增调节器**：\n\n"
+             "🔹 **低数值 (0.1 - 0.5)**：\n"
+             "物理定律严格，导师逻辑缜密，剧情偏向硬核现实主义（更像纪录片）。\n\n"
+             "🔸 **高数值 (1.0 - 1.5)**：\n"
+             "因果律崩坏，Reviewer 可能会提出用爱发电，剧情充满黑色幽默和荒诞感（更像瑞克和莫蒂）。"
+    )
+    
+    st.write(f"当前轮次: **{st.session_state.round_count}**")
+    if st.session_state.round_count > 0:
+        if st.session_state.round_count % 4 == 0:
+            st.warning("当前是：考核回合")
+        else:
+            st.info(f"距离下次考核还有：{4 - (st.session_state.round_count % 4)} 轮")
+
     days_left = 1460 - st.session_state.round_count * 7
     st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
     
@@ -178,7 +199,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- 7. 主界面渲染 ---
+# --- 7. 主界面渲染 (已修改标题) ---
 st.title("⚗️ 物理学生存模拟：从入门到入土")
 
 # --- 结局 UI ---
@@ -201,15 +222,18 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="请输入...")
+        field_input = st.text_input("请输入你的具体研究方向：", placeholder="例如：非厄米拓扑光子学 / 转角石墨烯 / 强关联电子体系...")
         st.session_state.field = field_input
     
     if st.button("签下卖身契 (Start)"):
-        st.session_state.game_started = True
-        real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。必须给出 A/B/C 三个选项。"
-        display_prompt = f"【入学】我是{role}方向的研究生，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
-        handle_action(real_prompt, "ACTION", display_text=display_prompt)
-        st.rerun()
+        if not field_input:
+            st.error("请先输入你的研究方向，否则导师不知道该骂你什么。")
+        else:
+            st.session_state.game_started = True
+            real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。必须给出 A/B/C 三个选项。"
+            display_prompt = f"【入学】我是{role}方向的研究生，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
+            handle_action(real_prompt, "ACTION", display_text=display_prompt)
+            st.rerun()
 else:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -228,7 +252,7 @@ else:
             handle_action(rebuttal, "REBUTTAL")
             st.rerun()
 
-    # Mode 2: Quiz (第 3, 6, 9... 轮固定触发)
+    # Mode 2: Quiz (第 4, 8, 12... 轮固定触发)
     elif st.session_state.mode == "QUIZ":
         st.warning("🚨 **考核时刻：导师的死亡凝视**")
         st.markdown(f"#### {st.session_state.event_content}")
