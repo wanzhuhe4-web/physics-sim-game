@@ -29,7 +29,7 @@ PHYSICS_SYSTEM_PROMPT = """
 2. **第 4 回合 (考核)**：
    - 当收到指令要求触发考核时，描述完上一轮的后果后，**不要给选项**。
    - 直接触发指令 `[EVENT: QUIZ]`。
-   - 出一道极其刁钻的物理简答题。
+   - 出一道有趣的相关领域的物理选择题，或者是关于实验室生活的常识选择题。
 3. **考核结算**：
    - 收到 `[ANSWER_QUIZ]` 后，进行评分（毒舌点评）。
    - 然后**立即恢复**到剧情模式，给出新一轮的 A/B/C 选项。
@@ -100,10 +100,11 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
         st.session_state.mode = "NORMAL"
     
     else:
-        if force_quiz:
+       if force_quiz:
             field = st.session_state.get("field", "物理")
-            prompt = f"{action_text} (系统指令：本轮是第 {st.session_state.round_count} 轮，是**强制考核回合**。描述完动作后果后，**绝对不要**给出 A/B/C 选项。请直接使用标签 `[EVENT: QUIZ]` 并结合{field}领域出一道刁钻的简答题。)"
-        else:
+            # 修改点：要求出“单项选择题”
+            prompt = f"{action_text} (系统指令：本轮是第 {st.session_state.round_count} 轮，是**强制考核回合**。描述完后果后，**不要**给剧情选项。请直接触发 `[EVENT: QUIZ]` 并结合{field}领域出一道**趣味单项选择题**，并列出 A/B/C 三个选项让玩家选择。)"
+       else:
             prompt = f"{action_text} (请给出 A/B/C 三个选项)"
 
     # 4. AI 推演
@@ -269,3 +270,4 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
