@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 2. 核心系统指令 ---
+# --- 2. 核心系统指令 (修复选项格式问题) ---
 PHYSICS_SYSTEM_PROMPT = """
 你是一款名为《物理生存模拟：熵增地狱》的文字 RPG 引擎。
 你的身份是**“学术界的墨菲定律化身”**。
@@ -31,7 +31,6 @@ PHYSICS_SYSTEM_PROMPT = """
    - 触发条件：玩家进行“投稿”或随机触发。
    - 指令：`[EVENT: BOSS_BATTLE]`。
    - 行为：扮演 **Reviewer 2**。提出 2-3 条极其荒谬、自相矛盾、吹毛求疵的审稿意见。
-   - 示例：“你的 DFT 计算没有考虑火星引力波的影响，请补充实验。”
 4. **结算模式 (Grading)**：
    - 指令：`[GRADE: REBUTTAL]`。
    - 行为：评价玩家的 Rebuttal Letter。如果玩家态度够卑微且逻辑自洽，则接受（发文+1）；否则拒稿（精神熵暴增）。
@@ -42,12 +41,20 @@ PHYSICS_SYSTEM_PROMPT = """
 - `[GAME_OVER: SUCCESS_INDUSTRY]` (大厂/量化)
 
 # ⚠️ 游戏节奏控制 (关键规则)
-1. **绝对禁止**在前 5 轮内强制触发结局，除非玩家主动输入了“退学”或“自杀”。
-2. 游戏必须是**回合制**的。每一轮只描述当前发生的一件事，然后等待玩家反应。
+1. **绝对禁止**在前 5 轮内强制触发结局。
+2. 游戏必须是**回合制**的。
 3. **不要**一次性生成整个职业生涯的故事。
 
+# ⚠️ 格式强制要求 (UI 适配)
+每次回复的最后，必须给出**严格且仅有**的三个选项，并使用 **A、B、C** 作为编号。
+格式示例：
+A. 选项一内容...
+B. 选项二内容...
+C. 选项三内容...
+(绝对不要使用 1/2/3/4 编号，也不要给出第 4 个选项)
+
 # 任务
-描述场景 -> 更新数值 -> 给出选项。
+描述场景 -> 更新数值 -> 给出 A/B/C 选项。
 """
 
 # --- 3. 初始化状态 ---
@@ -77,7 +84,7 @@ def get_ai_response(prompt, backend, temperature):
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 5. 核心动作处理 (支持隐藏指令) ---
+# --- 5. 核心动作处理 ---
 def handle_action(action_text, input_type="ACTION", display_text=None):
     """
     action_text: 发送给 AI 的实际内容（包含指令）
@@ -93,10 +100,8 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     }
     
     if display_text:
-        # 如果有指定的显示文本，直接用
         user_content = display_text
     else:
-        # 否则使用默认格式
         user_content = f"{prefix_map.get(input_type, '')} {action_text}"
         
     st.session_state.messages.append({"role": "user", "content": user_content})
@@ -104,7 +109,7 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     if input_type == "ACTION":
         st.session_state.round_count += 1
     
-    # 2. 构建 Prompt (AI 逻辑层 - 使用 action_text)
+    # 2. 构建 Prompt (AI 逻辑层)
     if input_type == "QUIZ_ANSWER":
         prompt = f"[ANSWER_QUIZ]: {action_text}。请评分。"
         st.session_state.mode = "NORMAL"
@@ -112,7 +117,8 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
         prompt = f"[GRADE: REBUTTAL]: {action_text}。请决定是接收还是拒稿。"
         st.session_state.mode = "NORMAL"
     else:
-        prompt = action_text
+        # 在这里再次强调格式，防止 AI 忘掉
+        prompt = f"{action_text} (请给出 A/B/C 三个选项)"
 
     # 3. AI 推演
     loading_text = {
@@ -121,7 +127,6 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
         "BOSS": "Reviewer 2 正在磨刀..."
     }
     
-    # 从 Session State 获取当前的设置
     backend = st.session_state.get("backend_selection", "Google AI Studio (Gemini)")
     temperature = st.session_state.get("temperature_setting", 1.0)
 
@@ -151,10 +156,8 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     # 随机事件触发器 (30%概率，且避开自由轮)
     elif st.session_state.mode == "NORMAL" and not st.session_state.is_over:
         is_free_round = (st.session_state.round_count % 3 == 0)
-        # 稍微降低概率防止太频繁
         if not is_free_round and random.random() < 0.2:
              new_mode = "QUIZ"
-             # 生成问题
              quiz_res = get_ai_response(f"[GENERATE_QUIZ] 领域：{st.session_state.field}。", backend, temperature)
              st.session_state.event_content = quiz_res
 
@@ -168,25 +171,21 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
 # --- 6. 侧边栏：商店与中控 ---
 with st.sidebar:
     st.header("🎛️ 实验室控制台")
-    # 保存设置到 session state 以便函数调用
     st.session_state.backend_selection = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
     
     st.divider()
     st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
     
-    # 延毕倒计时
     days_left = 1460 - st.session_state.round_count * 7
     st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
     
-    # 摸鱼商店
     st.divider()
     st.write("☕ **摸鱼补给站 (Shop):**")
     col_shop1, col_shop2 = st.columns(2)
     
-    # 商店逻辑：直接调用 handle_action，传入隐藏指令
     if col_shop1.button("喝冰美式", help="精神熵 -10"):
         handle_action(
-            action_text="【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。", 
+            action_text="【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。请给出 A/B/C 选项。", 
             input_type="ACTION",
             display_text="【摸鱼】我喝了一杯刷锅水般的冰美式，感觉活过来了。"
         )
@@ -194,7 +193,7 @@ with st.sidebar:
 
     if col_shop2.button("去海边发呆", help="导师杀意 +20"):
         handle_action(
-            action_text="【系统事件】玩家翘班去了海边发呆。请大幅降低精神熵，但提升导师杀意。", 
+            action_text="【系统事件】玩家翘班去了海边发呆。请大幅降低精神熵，但提升导师杀意。请给出 A/B/C 选项。", 
             input_type="ACTION",
             display_text="【摸鱼】我去巴勒莫的海边喂了会鸽子，手机关机了。"
         )
@@ -231,15 +230,14 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="请输入...")
+        field_input = st.text_input("具体天坑：", value="强场物理 / 凝聚态")
         st.session_state.field = field_input
     
-    st.info("提示：请确保已在 Secrets 中配置 GEMINI_API_KEY 或 DEEPSEEK_API_KEY。")
+    
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
-        # 【关键修复】使用 display_text 隐藏复杂的防呆指令
-        real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。"
+        real_prompt = f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。⚠️ 绝对不要直接给出结局，必须开始第一轮剧情。必须给出 A/B/C 三个选项。"
         display_prompt = f"【入学】我是{role}方向的研究生，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
         
         handle_action(real_prompt, "ACTION", display_text=display_prompt)
