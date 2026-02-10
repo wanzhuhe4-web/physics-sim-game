@@ -161,7 +161,7 @@ with st.sidebar:
     st.header("🎛️ 实验室控制台")
     st.session_state.backend_selection = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
     st.divider()
-    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1)
+    st.session_state.temperature_setting = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
     
     days_left = 1460 - st.session_state.round_count * 7
     st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
@@ -299,5 +299,6 @@ else:
         
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
