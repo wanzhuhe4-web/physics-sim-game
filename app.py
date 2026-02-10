@@ -8,14 +8,14 @@ import numpy as np
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="物理学生存模拟：从入门到入土", 
-    page_icon="⚔️", 
+    page_title="物理博士生存模拟：从入门到入土", 
+    page_icon="⚗️", 
     layout="wide"
 )
 
-# --- 2. 核心系统指令 (新增 Boss 战逻辑) ---
+# --- 2. 核心系统指令 ---
 PHYSICS_SYSTEM_PROMPT = """
-你是一款名为《物理学生存模拟：从入门到入土》的文字 RPG 引擎。
+你是一款名为《物理生存模拟：熵增地狱》的文字 RPG 引擎。
 你的身份是**“学术界的墨菲定律化身”**。
 
 # 核心数值 (每轮更新)
@@ -73,55 +73,91 @@ if "messages" not in st.session_state:
     st.session_state.final_report = ""
     st.session_state.round_count = 0
     st.session_state.achievements = []
-    # 状态机锁
     st.session_state.mode = "NORMAL" # NORMAL, QUIZ, BOSS
     st.session_state.event_content = ""
 
-# === 5. 侧边栏：商店修正版 ===
+# --- 5. 侧边栏：商店与中控 ---
+with st.sidebar:
+    st.header("🎛️ 实验室控制台")
+    backend = st.selectbox("运算大脑:", ["DeepSeek", "Google AI Studio (Gemini)"])
+    
+    st.divider()
+    # 【核心保留】Temperature 滑块
+    temperature = st.slider("宇宙混沌常数 (Temperature)", 0.0, 1.5, 1.0, 0.1, help="拉得越高，导师越疯。")
+    
+    # 延毕倒计时
+    days_left = 1460 - st.session_state.round_count * 7
+    st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
+    
+    # 【实装】摸鱼商店逻辑
+    st.divider()
     st.write("☕ **摸鱼补给站 (Shop):**")
     col_shop1, col_shop2 = st.columns(2)
     
-    # 逻辑：点击按钮后，向历史记录插入一条“系统事件”，强制 AI 更新数值
-    if col_shop1.button("喝冰美式", help="精神熵 -10，但可能胃痛"):
-        # 插入一条隐形的“用户操作”
-        st.session_state.messages.append({"role": "user", "content": "【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。"})
-        # 强制 AI 响应这个动作
-        with st.spinner("正在通过食道..."):
-             # 这里复用 get_ai_response 来生成喝咖啡的后果
-             if backend == "Google AI Studio (Gemini)":
-                 res = st.session_state.gemini_chat.send_message("【系统事件】玩家购买了冰美式。请降低他的精神熵，并描述咖啡很难喝。", generation_config={"temperature": temperature}).text
-             else:
-                 # DeepSeek 逻辑... (略，保持一致即可)
-                 pass 
-             # 简单点，我们可以直接不生成回复，留给下一轮，或者：
-             st.toast("精神熵已降低！胃部开始抽搐...", icon="📉")
-             # 最简单的做法：不立即触发AI，而是把这个事件“埋”在历史里，让AI在下一轮对话时“看到”你刚才喝了咖啡。
-             # 但为了防止历史错位，建议直接只弹窗，下一轮手动输入时带上状态（复杂）。
-             
-             # --- 推荐方案：直接作为一次 Action 处理 ---
-             handle_action("【系统指令】我喝了一杯冰美式，请更新我的数值。", "ACTION")
-             st.rerun()
+    # 点击按钮直接调用 handle_action，触发剧情更新
+    if col_shop1.button("喝冰美式", help="精神熵 -10"):
+        st.session_state.messages.append({"role": "user", "content": "【系统事件】我喝了一杯冰美式。"})
+        # 强制在这里处理逻辑，避免重绘问题
+        # 注意：这里我们使用一个特殊的标记让 handle_action 识别，或者直接插入 prompt
+        # 为了简单稳健，我们通过 session_state 传递一个 'pending_action' 或者直接 rerun 到主循环处理不太容易
+        # 最好的办法是：直接调用 API 接口生成一段“喝咖啡”的剧情
+        pass # 由于 Streamlit 的机制，按钮点击会刷新页面。我们在下面的主逻辑里处理比较复杂。
+        # 简化方案：点击按钮 -> 写入一条 User 消息 -> Rerun -> 主循环检测到最后一条是 User 消息 -> 触发 AI 回复
+        # 但这里我们采用最直接的：调用 handle_action
+    
+    # 为了解决 Streamlit 按钮回调的复杂性，我们将逻辑封装在 handle_action 中，
+    # 并在按钮 callback 中调用。
+    def shop_action(item):
+        st.session_state.round_count += 1
+        st.session_state.messages.append({"role": "user", "content": f"【摸鱼】我决定{item}。请恢复我的精神熵，并描述这个过程。"})
+        # 立即生成回复
+        try:
+            if backend == "Google AI Studio (Gemini)":
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                model = genai.GenerativeModel(model_name="gemini-3-flash-preview", system_instruction=PHYSICS_SYSTEM_PROMPT)
+                if "gemini_chat" not in st.session_state: st.session_state.gemini_chat = model.start_chat(history=[])
+                res = st.session_state.gemini_chat.send_message(f"【摸鱼】我决定{item}。", generation_config={"temperature": temperature}).text
+            else:
+                client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+                full_msgs = [{"role": "system", "content": PHYSICS_SYSTEM_PROMPT}] + st.session_state.messages
+                res = client.chat.completions.create(model="deepseek-chat", messages=full_msgs, temperature=temperature).choices[0].message.content
+            
+            clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
+            st.session_state.messages.append({"role": "assistant", "content": clean_res})
+        except Exception as e:
+            st.error(f"摸鱼失败: {e}")
 
-    if col_shop2.button("去海边发呆", help="导师杀意 +20，精神熵 -50"):
-        handle_action("【系统指令】我翘班去了海边发呆，请大幅降低精神熵，但提升导师杀意。", "ACTION")
+    if col_shop1.button("喝冰美式"):
+        shop_action("喝一杯刷锅水般的冰美式")
         st.rerun()
 
-# --- 6. API 逻辑 ---
+    if col_shop2.button("去海边发呆"):
+        shop_action("翘班去巴勒莫海边发呆")
+        st.rerun()
+
+    st.divider()
+    if st.button("重开 (Re-roll)", type="primary"):
+        st.session_state.clear()
+        st.rerun()
+
+# --- 6. API 逻辑 (使用 Temperature) ---
 def get_ai_response(prompt):
     try:
         if backend == "Google AI Studio (Gemini)":
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
             model = genai.GenerativeModel(model_name="gemini-3-flash-preview", system_instruction=PHYSICS_SYSTEM_PROMPT)
             if "gemini_chat" not in st.session_state: st.session_state.gemini_chat = model.start_chat(history=[])
+            # 【关键】这里使用了 temperature
             return st.session_state.gemini_chat.send_message(prompt, generation_config={"temperature": temperature}).text
         else:
             client = OpenAI(api_key=st.secrets["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
             full_msgs = [{"role": "system", "content": PHYSICS_SYSTEM_PROMPT}] + st.session_state.messages + [{"role": "user", "content": prompt}]
+            # 【关键】这里使用了 temperature
             return client.chat.completions.create(model="deepseek-chat", messages=full_msgs, temperature=temperature).choices[0].message.content
     except Exception as e:
         return f"🚨 API Error: {str(e)}"
 
-# --- 7. 核心动作处理 (复杂状态机) ---
+# --- 7. 核心动作处理 ---
 def handle_action(action_text, input_type="ACTION"):
     # input_type: ACTION, QUIZ_ANSWER, REBUTTAL
     
@@ -156,9 +192,7 @@ def handle_action(action_text, input_type="ACTION"):
         res = get_ai_response(prompt)
     
     # 4. 解析特殊事件标签
-    # 优先级：结局 > Boss战 > 提问 > 普通
-    
-    new_mode = "NORMAL" # 默认回归正常，除非触发新事件
+    new_mode = "NORMAL" 
     
     if "[GAME_OVER:" in res:
         st.session_state.is_over = True
@@ -177,17 +211,15 @@ def handle_action(action_text, input_type="ACTION"):
         st.session_state.event_content = re.sub(r"\[EVENT:.*\]", "", res).strip()
         st.toast("⚠️ 警告：导师发起突袭！", icon="🚨")
         
-    # 随机事件触发器 (仅在正常模式且未触发其他事件时)
+    # 随机事件触发器 (30%概率，且避开自由轮)
     elif st.session_state.mode == "NORMAL" and not st.session_state.is_over:
-        # 30% 概率触发 Quiz，但避开自由轮
         is_free_round = (st.session_state.round_count % 3 == 0)
         if not is_free_round and random.random() < 0.25:
              # 强制触发 Quiz
              new_mode = "QUIZ"
+             # 这里的 prompt 不会直接显示给用户，而是用来生成问题
              quiz_res = get_ai_response(f"[GENERATE_QUIZ] 领域：{st.session_state.field}。")
              st.session_state.event_content = quiz_res
-             # 把问题文本拼接到 res 里展示，或者分开处理
-             # 这里选择让前端独立渲染，所以不修改 res
 
     # 5. 绘图与清理
     plot_fig = None
@@ -197,12 +229,6 @@ def handle_action(action_text, input_type="ACTION"):
     
     clean_res = re.sub(r"\[.*?\]", "", res).replace("[PLOT_DATA]", "").strip()
     
-    # 如果触发了事件，AI 的回复可能就是事件本身，需要特殊处理
-    if new_mode != "NORMAL":
-        # 如果是新触发的事件，不要把事件内容作为普通回复存进去，而是存为 event_content
-        # 但为了流式对话连贯，我们把铺垫文本存进去
-        pass 
-    
     msg_obj = {"role": "assistant", "content": clean_res}
     if plot_fig: msg_obj["plot_status"] = "FAILURE" if ("失败" in res) else "SUCCESS"
     st.session_state.messages.append(msg_obj)
@@ -211,7 +237,7 @@ def handle_action(action_text, input_type="ACTION"):
     st.session_state.mode = new_mode
 
 # --- 8. 主界面渲染 ---
-st.title("⚗️ 物理学生存模拟：从入门到入土")
+st.title("⚗️ 物理博士生存模拟：从入门到入土")
 
 # --- 结局 UI ---
 if st.session_state.is_over:
@@ -236,12 +262,12 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="请输入")
+        field_input = st.text_input("具体天坑：", value="强场物理 / 凝聚态")
         st.session_state.field = field_input
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
-        handle_action(f"我是{role}，研究{field_input}。开始我的入门。", "ACTION")
+        handle_action(f"我是{role}，研究{field_input}。请开始我的受难。", "ACTION")
         st.rerun()
 else:
     for msg in st.session_state.messages:
