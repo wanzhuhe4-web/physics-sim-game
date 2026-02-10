@@ -230,7 +230,7 @@ if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1: role = st.radio("受难方向：", ["搬砖党 (实验)", "炼丹党 (理论)"])
     with col2: 
-        field_input = st.text_input("具体天坑：", value="强场物理 / 凝聚态")
+        field_input = st.text_input("具体天坑：", value="请输入...)
         st.session_state.field = field_input
     
     
@@ -292,3 +292,4 @@ else:
         
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
