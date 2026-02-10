@@ -35,11 +35,16 @@ PHYSICS_SYSTEM_PROMPT = """
 4. **结算模式 (Grading)**：
    - 指令：`[GRADE: REBUTTAL]`。
    - 行为：评价玩家的 Rebuttal Letter。如果玩家态度够卑微且逻辑自洽，则接受（发文+1）；否则拒稿（精神熵暴增）。
-
+   
 # 结局判定
 - `[GAME_OVER: FAILURE]` (延毕/卖红薯)
 - `[GAME_OVER: SUCCESS_ACADEMIC]` (Nature/教职)
 - `[GAME_OVER: SUCCESS_INDUSTRY]` (大厂/量化)
+
+# ⚠️ 游戏节奏控制 
+1. **绝对禁止**在前 5 轮内强制触发结局，除非玩家主动输入了“退学”或“自杀”。
+2. 游戏必须是**回合制**的。每一轮只描述当前发生的一件事，然后等待玩家反应。
+3. **不要**一次性生成整个职业生涯的故事。
 
 # 任务
 描述场景 -> 更新数值 -> 给出选项。
@@ -227,7 +232,7 @@ if not st.session_state.game_started:
     
     if st.button("签下卖身契 (Start)"):
         st.session_state.game_started = True
-        handle_action(f"我是{role}，研究{field_input}。请开始我的受难。", "ACTION")
+        handle_action(f"我是{role}，研究{field_input}。请开启研究生生涯的第一天。请给出初始场景、初始数值和第一轮的选项。绝对不要直接给出结局。", "ACTION")
         st.rerun()
 else:
     for msg in st.session_state.messages:
@@ -279,3 +284,4 @@ else:
         
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
