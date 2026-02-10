@@ -85,9 +85,9 @@ st.markdown("> “在物理的世界里，只有真空中的球形奶牛是快�
 if not st.session_state.game_started:
     col1, col2 = st.columns(2)
     with col1:
-        role = st.radio("修行路径：", ["苦逼实验党 (Experimental)", "修仙理论党 (Theoretical)"])
+        role = st.radio("修行路径：", ["实验党 (Experimental)", "理论党 (Theoretical)"])
     with col2:
-        field = st.text_input("具体折磨领域：", value="强场物理 / 凝聚态 / 计算物理")
+        field = st.text_input("具体折磨领域：", value="强场物理 / 凝聚态 / 计算物理 / 超快光学")
     
     if st.button("签下卖身契 (Start Journey)"):
         st.session_state.game_started = True
@@ -105,17 +105,18 @@ else:
     st.markdown("---")
     st.write("🔧 **实验室决策：**")
     cols = st.columns(3)
-    if cols[0].button("A. 咬牙坚持", use_container_width=True):
+    if cols[0].button("A", use_container_width=True):
         handle_action("选项 A")
         st.rerun()
-    if cols[1].button("B. 试图摆烂", use_container_width=True):
+    if cols[1].button("B", use_container_width=True):
         handle_action("选项 B")
         st.rerun()
-    if cols[2].button("C. 寻求导师慈悲", use_container_width=True):
+    if cols[2].button("C", use_container_width=True):
         handle_action("选项 C")
         st.rerun()
 
     if prompt := st.chat_input("或输入回复测验的答案/自定义动作..."):
         handle_action(prompt)
         st.rerun()
+
 
