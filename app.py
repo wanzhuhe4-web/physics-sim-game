@@ -182,8 +182,8 @@ with st.sidebar:
         else:
             st.info(f"距离下次考核还有：{4 - (st.session_state.round_count % 4)} 轮")
 
-    days_left = 1460 - st.session_state.round_count * 7
-    st.metric("距离延毕", f"{days_left} 天", delta="-1 周", delta_color="inverse")
+    days_left = 1460 - st.session_state.round_count * 30
+    st.metric("距离延毕", f"{days_left} 天", delta="-1 月", delta_color="inverse")
     
     st.divider()
     st.write("☕ **摸鱼补给站:**")
@@ -270,4 +270,5 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
