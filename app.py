@@ -261,7 +261,6 @@ else:
 
     # Mode 2: Quiz (第 4 轮固定触发 - 全按钮版)
     elif st.session_state.mode == "QUIZ":
-        st.warning("🚨 **考核时刻：导师的死亡凝视**")
         st.caption("请阅读上方的题目，并点击对应的选项回答：")
         
         col_q1, col_q2, col_q3 = st.columns(3)
@@ -287,3 +286,4 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义作死操作..."):
             handle_action(prompt, "ACTION"); st.rerun()
+
