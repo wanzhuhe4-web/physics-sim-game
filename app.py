@@ -28,7 +28,7 @@ PHYSICS_SYSTEM_PROMPT = """
 | :--- | :--- | :--- |
 | **头发浓度** | 100% | 初始为满。随着报错和熬夜逐渐荒漠化。|
 | **科研进展** | 0% | 象征你离毕业的距离，与论文产出和论文质量正相关。达到 100% 才能毕业。 |
-| **精神压力** | 20% | 初始自带 20% 基础焦虑。达到 100% 将会退学 |
+| **精神压力** | 0% | 达到 100% 将会退学 |
 
 # 游戏循环机制
 1. **[Normal] 搬砖模式**：
@@ -276,7 +276,7 @@ if not st.session_state.game_started:
             st.error("请先输入你的研究方向，否则导师不知道该骂你什么。")
         else:
             st.session_state.game_started = True
-            real_prompt = f"我是{role}，研究{field_input}。 请开启第一轮游戏。初始数值：头发浓度 100%，科研进展 0%，精神压力 20%。给出小白初入科研界的场景。必须给出 A/B/C 三个选项。"
+            real_prompt = f"我是{role}，研究{field_input}。 请开启第一轮游戏。初始数值：头发浓度 100%，科研进展 0%，精神压力 0%。给出小白初入科研界的场景。必须给出 A/B/C 三个选项。"
             display_prompt = f"【入学】我是{role}，研究{field_input}。我怀着激动（无知）的心情签下了卖身契。"
             handle_action(real_prompt, "ACTION", display_text=display_prompt)
             st.rerun()
@@ -327,6 +327,7 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义操作 (例：默默打开知乎搜索‘博士送外卖’)...", key="normal_input"):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
 
