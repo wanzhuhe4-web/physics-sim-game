@@ -217,7 +217,7 @@ with st.sidebar:
     
     st.write(f"当前轮次: **{st.session_state.round_count}** / 15")
     
-    days_left = 1500 - int(st.session_state.round_count / 100)
+    days_left = 1500 - int(st.session_state.round_count * 100)
     st.metric("距离延毕", f"{days_left} 天", delta="余额不足", delta_color="inverse")
     
     st.divider()
@@ -327,6 +327,7 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义操作 (例：默默打开知乎搜索‘博士送外卖’)...", key="normal_input"):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
 
