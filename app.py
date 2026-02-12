@@ -106,8 +106,8 @@ def handle_action(action_text, input_type="ACTION", display_text=None):
     # 1. 记录用户输入
     prefix_map = {
         "ACTION": "【抉择】",
-        "QUIZ_ANSWER": "【辟谣】",
-        "REBUTTAL": "【卑微求生】"
+        "QUIZ_ANSWER": "【抉择】",
+        "REBUTTAL": "【抉择】"
     }
     user_content = display_text if display_text else f"{prefix_map.get(input_type, '')} {action_text}"
     st.session_state.messages.append({"role": "user", "content": user_content})
@@ -327,6 +327,7 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义操作 (例：默默打开知乎搜索‘博士送外卖’)...", key="normal_input"):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
 
