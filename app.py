@@ -266,7 +266,7 @@ if not st.session_state.game_started:
     """)
     
     col1, col2 = st.columns(2)
-    with col1: role = st.radio("你的角色：", ["实验党", "搬砖党"])
+    with col1: role = st.radio("你的角色：", ["实验党", "理论党"])
     with col2: 
         field_input = st.text_input("具体天坑方向：", placeholder="例如：超弦理论 / 暗物质 / 纳米材料...")
         st.session_state.field = field_input
@@ -327,6 +327,7 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义操作 (例：默默打开知乎搜索‘博士送外卖’)...", key="normal_input"):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
 
