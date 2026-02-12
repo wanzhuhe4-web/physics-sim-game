@@ -261,8 +261,8 @@ if st.session_state.is_over:
 if not st.session_state.game_started:
     st.markdown("""
     ### 👋 欢迎来到 模拟人生（物理学特供版）
-    你是一名游走在**“延毕边缘”、以“冷咖啡”为燃料、将“报错代码”转化为生存动力的生物计算单元**。
-    在这里，你的唯一目标是在头发浓度跌破热力学极限之前，强行突破那个名为**“科研进展”的无穷大势垒，在无尽的精神压力**中观测到名为“毕业”的微弱红移信号。
+    你是一名游走在“延毕边缘”、以“冷咖啡”为燃料、将“报错代码”转化为生存动力的生物计算单元。
+    在这里，你的唯一目标是在头发浓度跌破热力学极限之前，强行突破那个名为“科研进展”的无穷大势垒，在无尽的精神压力中观测到名为“毕业”的微弱红移信号。
     """)
     
     col1, col2 = st.columns(2)
@@ -327,6 +327,7 @@ else:
         if cols[2].button("C", use_container_width=True): handle_action("C", "ACTION"); st.rerun()
         if prompt := st.chat_input("自定义操作 (例：默默打开知乎搜索‘博士送外卖’)...", key="normal_input"):
             handle_action(prompt, "ACTION"); st.rerun()
+
 
 
 
